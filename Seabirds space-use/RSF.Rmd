@@ -1,0 +1,959 @@
+---
+title: "Résultats RSF"
+author: "Maud Quéroué"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r, echo = FALSE, message = FALSE}
+rm(list = ls())  
+
+library(dplyr)
+library(sf)
+library(purrr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(nimble)
+library(MCMCvis)
+library(ggspatial)
+library(stringr)
+library(colorspace)
+library(mgcv)
+`%!in%` = Negate(`%in%`)
+
+# PATH
+local_path <- "C:/Users/queroue/Documents/Migratlane/Git/Migralion_/"
+  
+# DATA
+#load(paste0(local_path, "1.data/all_seabirds_counts.rdata"))
+load(paste0(local_path, "1.data/covariates.rdata"))
+load(paste0(local_path, "1.data/colonies.rdata"))
+
+# FUNCTIONS
+source(paste0(local_path, "2.code/functions.R"))
+
+
+europe <- st_read(paste0(local_path,"1.data/spatial_objects/Europe/Europe_merged.shp"), quiet = TRUE) %>% 
+  dplyr::filter(COUNTRY %in% c("France",  "Spain", "Italy"))%>%
+  st_transform(2154) %>%
+  st_union()
+
+
+xlim <- st_bbox(covariates)[c(1,3)]
+ylim <- st_bbox(covariates)[c(2,4)]
+
+```
+
+# Covariables 
+
+## Covariables environnementales {.tabset}
+
+### Toutes covariables
+
+```{r, echo = FALSE, warning = FALSE, fig.height = 15, fig.width = 15}
+
+all_cov <- c(
+  "log_mean_CHL", 
+  "mean_winter_SST", 
+  "mean_spring_SST", 
+  "mean_summer_SST", 
+  "mean_autumn_SST", 
+  "mean_SST", 
+  "slope", 
+  "dist_to_shore", 
+  "bathymetry", 
+  "mean_SAL", 
+  "mean_SSH", 
+  "mean_VEL_North", 
+  "mean_VEL_East")
+  #"dist_colonies")
+
+plot_cov(covariates, all_cov)
+
+```
+
+- Corrélations : 
+
+```{r, echo = FALSE}
+grid <- covariates %>%
+  select(all_of(all_cov))
+
+corrplot::corrplot.mixed(grid %>% st_drop_geometry() %>% cor(method = "pearson", use = "na.or.complete"))
+```
+
+### Covariables retenues 
+
+```{r, echo = FALSE}
+
+selected_cov <- c(
+  "log_mean_CHL", 
+  "mean_SST", 
+  "dist_to_shore", 
+  "bathymetry")
+
+plot_cov(covariates, selected_cov)
+
+```
+
+- Corrélations :
+
+```{r, echo = FALSE}
+
+grid <- covariates %>%
+  select(all_of(selected_cov))
+
+corrplot::corrplot.mixed(grid %>% st_drop_geometry() %>% cor(method = "pearson", use = "na.or.complete"))
+
+rm(grid)
+```
+
+## Colonies {.tabset}
+
+### Sterne pierregarin
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Sterne pierregarin")
+
+```
+
+### Océanite tempête
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Océanite tempête")
+
+```
+
+### Mouette mélanocéphale
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Mouette mélanocéphale")
+
+```
+
+### Mouette rieuse
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Mouette rieuse")
+
+```
+
+### Sterne caugek
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Sterne caugek")
+
+```
+
+### Puffin de Scopoli
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Puffin de Scopoli")
+
+```
+
+### Puffin yelkouan
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Puffin yelkouan")
+
+```
+
+### Goéland leucophée
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Goéland leucophée")
+
+```
+
+# Modèle 
+
+- 1 position GPS conservée par heure.    
+- 10 pseudo-absences générées par points.    
+- Vraisemblance pondérée avec w = 1000 pour les pseudo-absences.    
+- Les relations avec les covariables environnementales sont sous forme de splines, avec 3 noeuds pour garder des formes simples.     
+- Possibilité d'ajouter des effets aléatoires individus.    
+
+# {.tabset}
+
+## Sans effet individu
+
+```{r}
+
+code_rsf <- nimbleCode({
+  
+  
+  for(i in 1:n.occ.cov){
+    
+    beta[i] ~ dnorm(0, sd = 3)
+
+  }
+  
+  # Likelihood
+  for(t in 1:npoints){
+    
+    logit(omega[t]) <- inprod(beta[1:n.occ.cov], XN[site_id[t], 1:n.occ.cov])
+    kase[t] ~ dbinom(omega[t], w[t])
+    
+    
+  }
+  
+})
+
+
+```  
+
+## Avec effet individu
+
+```{r}
+
+code_rsf <- nimbleCode({
+  
+  
+  for(i in 1:n.occ.cov){
+    
+    beta[i] ~ dnorm(0, sd = 3)
+    sd_pop[i] ~ dunif(0, 5)
+
+     for(j in 1:nindividual){
+       # add individual heterogeneity
+       beta_ind[j, i] ~ dnorm(beta[i], sd = sd_pop[i])
+     }
+  }
+  
+  # Likelihood
+  for(t in 1:npoints){
+    
+    logit(omega[t]) <- inprod(beta_ind[idind[t], 1:n.occ.cov], XN[site_id[t], 1:n.occ.cov])
+    kase[t] ~ dbinom(omega[t], w[t])
+    
+    
+  }
+  
+})
+
+
+``` 
+
+# Résultats 
+
+## Goélands leucophées {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Février
+
+```{r, echo = FALSE}
+
+load(paste0(local_path,"3.results/leucophee/leucophee_HIV_gps_fix.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/leucophee/leucophee_ETE_gps_fix_without_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (colonies) {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/leucophee/leucophee_ETE_gps_fix_with_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+sp <- "goeland leucophee"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+## Sternes caugek {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Février
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, covariates)
+
+load(paste0(local_path, "1.data/covariates.rdata"))
+load(paste0(local_path,"3.results/caugek/caugek_HIV_gps_fix.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/caugek/caugek_ETE_gps_fix_without_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (colonies) {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/caugek/caugek_ETE_gps_fix_with_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+sp <- "sterne caugek"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+## Puffin yelkouan {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Janvier
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, covariates)
+
+load(paste0(local_path, "1.data/covariates.rdata"))
+load(paste0(local_path,"3.results/yelkouan/yelkouan_HIV_gps_fix.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+
+- Février - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/yelkouan/yelkouan_ETE_gps_fix_without_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (colonies) {.tabset}
+
+- Février - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/yelkouan/yelkouan_ETE_gps_fix_with_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+sp <- "puffin yelkouan"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+## Puffin de Scopoli {.tabset}
+### Reproduction (sans colonies) {.tabset}
+
+- Avril- Septembre
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, covariates)
+load(paste0(local_path, "1.data/covariates.rdata"))
+
+load(paste0(local_path,"3.results/scopoli/scopoli_ETE_gps_fix_without_col.rdata")) 
+sum_out <- MCMCsummary(results$out_rsf)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```
+
+### Reproduction (colonies) {.tabset}
+
+- Avril - Septembre
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+load(paste0(local_path,"3.results/scopoli/scopoli_ETE_gps_fix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_rsf)
+sp <- "puffin de scopoli"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_rsf,                    
+          pdf = FALSE)
+
+```
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_gps_data(results$data_gps, results$data_rsf)
+
+```
+
+#### Données augmentées 
+
+```{r, echo = FALSE}
+
+plot_gps_data_aug(results$data_gps_aug)
+
+```

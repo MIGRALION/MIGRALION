@@ -1,0 +1,2879 @@
+---
+title: "Résultats Nmixture"
+author: "Maud Quéroué"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r, echo = FALSE, message = FALSE}
+rm(list = ls())  
+
+library(dplyr)
+library(sf)
+library(purrr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(nimble)
+library(MCMCvis)
+library(ggspatial)
+library(stringr)
+library(colorspace)
+library(mgcv)
+`%!in%` = Negate(`%in%`)
+
+# PATH
+local_path <- "C:/Users/queroue/Documents/Migratlane/Git/Migralion_/"
+  
+# DATA
+load(paste0(local_path, "1.data/all_seabirds_counts.rdata"))
+load(paste0(local_path, "1.data/covariates.rdata"))
+load(paste0(local_path, "1.data/colonies.rdata"))
+
+# FUNCTIONS
+source(paste0(local_path, "2.code/functions.R"))
+
+
+europe <- st_read(paste0(local_path,"1.data/spatial_objects/Europe/Europe_merged.shp"), quiet = TRUE) %>% 
+  dplyr::filter(COUNTRY %in% c("France",  "Spain", "Italy"))%>%
+  st_transform(2154) %>%
+  st_union()
+
+
+xlim <- st_bbox(covariates)[c(1,3)]
+ylim <- st_bbox(covariates)[c(2,4)]
+
+```
+
+
+# Data {.tabset}
+
+
+```{r, echo = FALSE}
+
+data_list <- list(pelmed = list(obs_data = pelmed_obs, effort_data = pelmed_eff),
+                  migralion = list(obs_data = migralion_obs, effort_data = migralion_eff),
+                  pnm = list(obs_data = pnm_obs, effort_data = pnm_eff),
+                  samm = list(obs_data = samm_obs, effort_data = samm_eff))
+
+rm(pelmed_eff, pelmed_obs, migralion_eff, migralion_obs, pnm_eff, pnm_obs, samm_eff, samm_obs)
+
+
+```
+
+## Réparition spatiale
+
+```{r, echo = FALSE}
+
+nmix_tibble_list <- map(data_list,
+                        ~ { filter_one_species(.x, "NA")})
+
+plot(plot_all_effort(nmix_tibble_list, effort = TRUE))
+
+rm(nmix_tibble_list)
+
+```
+
+
+## Répartition temporelle 
+
+```{r, echo = FALSE, fig.height = 3, fig.width = 10}
+
+  all_eff <- map_dfr(names(data_list), ~ data_list[[.x]]$eff %>% 
+                                  select(date, geometry) %>% 
+                                  mutate(Survey = .x)) %>%
+  distinct(date, Survey, .keep_all = TRUE) %>%
+  dplyr::select(date, Survey) %>%
+  mutate(
+    Saison = case_when(
+      month(date) %in% c(12, 1, 2)  ~ "Hiver",
+      month(date) %in% c(3, 4, 5)   ~ "Printemps",
+      month(date) %in% c(6, 7, 8)   ~ "Été",
+      month(date) %in% c(9, 10, 11) ~ "Automne",
+    )
+  )
+
+# Tracer le graphique
+ggplot(all_eff, aes(x = date, y = Survey, color = Saison)) +
+  geom_point(size = 6, shape = 19) +                      # Ajouter des lignes
+  labs(title = "",
+       x = "",
+       y = "") +
+    scale_color_manual(values = c("#8f5d5d","#f2cc8f","#3d405b","#babf95"))+
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+
+```
+
+
+
+
+# Covariables 
+
+## Covariables environnementales {.tabset}
+
+### Toutes covariables
+
+```{r, echo = FALSE, warning = FALSE, fig.height = 15, fig.width = 15}
+
+all_cov <- c(
+  "log_mean_CHL", 
+  "mean_winter_SST", 
+  "mean_spring_SST", 
+  "mean_summer_SST", 
+  "mean_autumn_SST", 
+  "mean_SST", 
+  "slope", 
+  "dist_to_shore", 
+  "bathymetry", 
+  "mean_SAL", 
+  "mean_SSH", 
+  "mean_VEL_North", 
+  "mean_VEL_East")
+  #"dist_colonies")
+
+plot_cov(covariates, all_cov)
+
+```
+
+- Corrélations : 
+
+```{r, echo = FALSE}
+grid <- covariates %>%
+  select(all_of(all_cov))
+
+corrplot::corrplot.mixed(grid %>% st_drop_geometry() %>% cor(method = "pearson", use = "na.or.complete"))
+```
+
+### Covariables retenues 
+
+```{r, echo = FALSE}
+
+selected_cov <- c(
+  "log_mean_CHL", 
+  "mean_SST", 
+  "dist_to_shore", 
+  "bathymetry")
+
+plot_cov(covariates, selected_cov)
+
+```
+
+- Corrélations :
+
+```{r, echo = FALSE}
+
+grid <- covariates %>%
+  select(all_of(selected_cov))
+
+corrplot::corrplot.mixed(grid %>% st_drop_geometry() %>% cor(method = "pearson", use = "na.or.complete"))
+
+rm(grid)
+```
+
+## Colonies {.tabset}
+
+### Sterne pierregarin
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Sterne pierregarin")
+
+```
+
+### Océanite tempête
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Océanite tempête")
+
+```
+
+### Mouette mélanocéphale
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Mouette mélanocéphale")
+
+```
+
+### Mouette rieuse
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Mouette rieuse")
+
+```
+
+### Sterne caugek
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Sterne caugek")
+
+```
+
+### Puffin de Scopoli
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Puffin de Scopoli")
+
+```
+
+### Puffin yelkouan
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Puffin yelkouan")
+
+```
+
+### Goéland leucophée
+
+```{r, echo = FALSE}
+
+plot_colonies(colonies_fr, "Goéland leucophée")
+
+```
+
+# Modèle 
+
+- Processus de latent modélisé avec une Négative binomiale.   
+- La relation avec les covariables environnementales sont un GAM, avec 2 noeuds pour garder des formes simples. 
+- Offset sur la longeur de transect.    
+- Probabilité de détection dépendante du type de campagne.    
+
+
+```{r}
+
+
+code_nmix <- nimbleCode({
+  
+  # Priors ---------------------
+  
+  
+  kappa ~ dunif(min = 0.01, max = 100)
+  
+  
+  for(j in 1: ndatasets) {
+    
+    p[j] ~ dunif(0, 1)
+  
+  }
+  
+  
+  for(i in 1:n.occ.cov){
+    
+    beta[i] ~ dnorm(0, sd = 3)
+    
+  }
+  
+  # Likelihood ----------------
+  
+  # State process
+  for(i in 1:nsites_total){
+    
+    log(lambda[i]) <- inprod(beta[1:n.occ.cov], XN[i,1:n.occ.cov])
+
+    
+  }
+  
+      
+  # Observation process
+  for (i in 1:nsampled_points){
+    
+
+    prob[i] <- kappa / (kappa + lambda[site_id[i]] * surface[i])
+    N[i] ~ dnegbin(prob = prob[i], size = kappa)    # Modèle Negative Binomial
+
+
+    nobs[i] ~ dbin(p[dataset_nb[i]], N[i])
+
+    
+    
+  # Posterior Predictive checks ---------------
+    
+    # Compute discrepancy for real and simulated data
+    # Expected count at this site and this survey
+     exp_count[i] <- N[i] * p[dataset_nb[i]]
+
+    # Discrepancy for the real data
+    # (small value added to denominator to avoid potential divide by zero)
+     E[i] <- pow((nobs[i] - exp_count[i]), 2) / (exp_count[i] + 0.5)
+  
+    # Simulate new count from model
+     nobs.rep[i] ~ dbin(p[dataset_nb[i]], N[i])
+     
+    # Discrepancy for the simulated data
+    E.rep[i] <- pow((nobs.rep[i] - exp_count[i]), 2) / (exp_count[i] + 0.5)
+    
+  }
+  
+  
+  # chi-squared test statistics
+
+  for (nd in 1:ndatasets){
+
+    fit[nd] <- sum(E[(1 + npoints_dataset[nd]):(npoints_dataset[nd+1])])
+    fit.rep[nd] <- sum(E.rep[(1 + npoints_dataset[nd]):(npoints_dataset[nd+1])])
+
+  }
+  
+})
+
+```
+
+# Results
+
+
+```{r, echo = FALSE, eval = FALSE}
+
+# Il faut runner le script : 3.results/run_Nmix 
+
+```
+
+## Macareux moine {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Décembre - Mars
+
+```{r, echo = FALSE}
+
+load(paste0(local_path,"3.results/macareux/macareux_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE}
+
+plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Pingouin torda {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Décembre - Mars
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/torda/torda_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Fou de Bassan {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Octobre - Avril
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/fou/fou_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+## Goéland leucophée {.tabset}
+
+### Hors reproduction {.tabset}
+- Septembre - Février
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/leucophee/leucophee_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+### Reproduction {.tabset}
+- Mars - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/leucophee/leucophee_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "goeland leucophee"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+- Mars - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/leucophee/leucophee_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Mouette tridactyle {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Novembre - Avril
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/tridactyle/tridactyle_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+- Celulles en gris indiquent un CV > 100.
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Labbes {.tabset}
+
+- Labbe parasites, Grands labbes, Labbes pomarins + labbes indéterminés    
+
+### Hors reproduction {.tabset} 
+
+- Septembre - Mai
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/labbes/labbes_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Mouette rieuse {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Mars
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/rieuse/rieuse_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Mouette mélanocéphale {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Mars
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/melanocephale/melanocephale_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction {.tabset}
+- Avril - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/melanocephale/melanocephale_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "mouette melanocephale"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+- Avril - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/melanocephale/melanocephale_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Mouette pygmée {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Octobre - Mai
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/pygmee/pygmee_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+## Sterne caugek {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Février
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/caugek/caugek_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+### Reproduction (colonies) {.tabset}
+
+- Mars - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/caugek/caugek_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "sterne caugek"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+- Mars - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/caugek/caugek_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Sterne pierregarin {.tabset}
+
+### Reproduction (colonies) {.tabset}
+
+- Avril - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/pierregarin/pierregarin_ETE_nmix_with_col.rdata"))
+sp <- "sterne pierregarin"
+sum_out <- MCMCsummary(results$out_nmix) 
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+```
+
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+- Avril - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/pierregarin/pierregarin_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+## Puffin des Baléares {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Aout - Décembre
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/baleares/baleares_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+### Reproduction (sans colonies) {.tabset}
+- Janvier - Juin
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/baleares/baleares_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Puffin yelkouans {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Janvier
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/yelkouan/yelkouan_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = FALSE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (colonies) {.tabset}
+
+- Février - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/yelkouan/yelkouan_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "puffin yelkouan"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+### Reproduction (sans colonies) {.tabset}
+- Férvier - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/yelkouan/yelkouan_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+## Puffin de Scopoli 
+
+### Reproduction (colonies) {.tabset}
+
+- Avril - Septembre
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/scopoli/scopoli_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "puffin de scopoli"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+### Reproduction (sans colonies) {.tabset}
+
+- Avril - Septembre
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/scopoli/scopoli_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+
+## Océanites {.tabset}
+
+
+- Océantites tempêtes et océanites indéterminées. 
+
+### Reproduction (colonies) {.tabset}
+
+- Avril - Aout
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out, sp)
+
+load(paste0(local_path,"3.results/oceanite/oceanite_ETE_nmix_with_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+sp <- "oceanite tempete"
+covariates <- get_proximity_colony_score(colonies_fr, covariates, sp)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Colonies
+
+```{r}
+
+plot_prox_colonies(colonies_fr, sp, covariates)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+```
+
+### Reproduction (sans colonies) {.tabset}
+- Avril - Aout
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/oceanite/oceanite_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### MCMC summary
+
+```{r, echo = FALSE}
+
+DT::datatable(sum_out)
+
+```
+
+#### MCMC chains
+
+```{r, echo = FALSE}
+
+MCMCtrace(results$out_nmix,                    
+          pdf = FALSE)
+
+```
+
+
+#### Données
+
+```{r, echo = FALSE, warning = FALSE}
+
+ plot_all_count(results$nmix_tibble_list)
+
+```
+
+#### Données filtrées
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+```
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+
+#### Observations
+
+```{r, echo = FALSE, warning=FALSE}
+
+DT::datatable(get_obs(results$nmix_tibble_list, covariates))
+
+knitr::knit_exit()
+
+```

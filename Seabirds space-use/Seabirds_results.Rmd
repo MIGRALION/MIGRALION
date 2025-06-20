@@ -1,0 +1,1563 @@
+---
+title: "Migralion oiseaux marins"
+author: "Maud Quéroué"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r, echo = FALSE, message = FALSE}
+rm(list = ls())  
+
+library(dplyr)
+library(sf)
+library(purrr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(nimble)
+library(MCMCvis)
+library(ggspatial)
+library(stringr)
+library(colorspace)
+library(mgcv)
+`%!in%` = Negate(`%in%`)
+
+# PATH
+local_path <- "C:/Users/queroue/Documents/Migratlane/Git/Migralion_/"
+  
+# DATA
+load(paste0(local_path, "1.data/covariates.rdata"))
+
+# FUNCTIONS
+source(paste0(local_path, "2.code/functions.R"))
+
+
+europe <- st_read(paste0(local_path,"1.data/spatial_objects/Europe/Europe_merged.shp"), quiet = TRUE) %>% 
+  dplyr::filter(COUNTRY %in% c("France",  "Spain", "Italy"))%>%
+  st_transform(2154) %>%
+  st_union()
+
+
+xlim <- st_bbox(covariates)[c(1,3)]
+ylim <- st_bbox(covariates)[c(2,4)]
+
+```
+
+# Espèces équipées en GPS
+
+## Goéland leucophée {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Février
+
+```{r, echo = FALSE}
+
+sp <- "leucophee"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_nmix.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_gps_fix.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_int_fix.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+
+### Reproduction {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+sp <- "leucophee"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_nmix_without_col.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_gps_fix_without_col.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_int_fix_without_col.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+
+## Sterne caugek {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Février
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+sp <- "caugek"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_nmix.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_gps_fix.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_int_fix.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+### Reproduction {.tabset}
+
+- Mars - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+sp <- "caugek"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_nmix_without_col.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_gps_fix_without_col.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_int_fix_without_col.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+
+## Puffin yelkouan {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Janvier
+
+```{r, echo = FALSE}
+
+sp <- "yelkouan"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_nmix.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_gps_fix.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_HIV_int_fix.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+
+### Reproduction {.tabset}
+
+- Février - Juillet
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+sp <- "yelkouan"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_nmix_without_col.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_gps_fix_without_col.rdata")) 
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_int_fix_without_col.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix) 
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf) 
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int) 
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+
+#### Posterior predictive check 
+
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_PPC(results$out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, fig.width = 10, fig.width = 7, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list, title = "Nmixture")
+p2 <- plot_p(results$sum_out_int, results$nmix_list, title = "Intégration")
+
+cowplot::plot_grid(p1, p2, ncol = 2)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, fig.width = 10, fig.height = 7, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données augmentées"))
+
+```
+
+## Puffin de Scopoli {.tabset}
+
+### Reproduction {.tabset}
+
+- Mars - Juillet        
+- Absent en hiver    
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+sp <- "scopoli"
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_nmix_without_col.rdata"))
+results_nmix <- results
+
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_gps_fix_without_col.rdata"))
+results_rsf <- results
+
+load(paste0(local_path,"3.results/", sp, "/", sp, "_ETE_int_fix_without_col.rdata"))
+results_int <- results[!names(results) %in% c("nmix_list", "nmix_tibble_list", "data_gps","data_gps_aug")]
+
+results <- c(results_nmix, results_rsf, results_int)
+results <- c(results, list(sum_out_nmix = MCMCsummary(results_nmix$out_nmix), sum_out_rsf = MCMCsummary(results_rsf$out_rsf), sum_out_int = MCMCsummary(results_int$out_int)))
+
+rm(results_int, results_nmix, results_rsf)
+
+```
+
+#### Carte
+
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 7}
+
+p1 <- plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+p2 <- plot_spatial_prediction(results$cov_rsf, covariates, results$out_rsf)
+
+p3 <- plot_spatial_prediction(cov_obj = results$cov_int, out_obj = results$out_int, grid_obj = covariates, integrated = TRUE)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE, warning = FALSE, fig.width =20, fig.height = 9}
+
+p1 <- make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+p2 <- make_cov_prediction_gam(results$cov_rsf, results$data_rsf$constants, results$out_rsf, gps = TRUE)
+p3 <- make_cov_prediction_int(cov_obj = results$cov_int, const_obj = results$data_int$constants, out_obj = results$out_int)
+
+cowplot::plot_grid(p1, p2, p3, ncol = 3, labels = c("Nmixture", "RSF", "Intégration"))
+
+```
+
+#### Posterior predictive check 
+
+```{r, echo = FALSE}
+
+p1 <- plot_PPC(results$out_nmix, results$nmix_list)
+p2 <- plot_PPC(results$out_int, results$nmix_list)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Nmixture", "Intégration"))
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+p1 <- plot_p(results$sum_out_nmix, results$nmix_list)
+p2 <- plot_p(results$sum_out_int, results$nmix_list)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Nmixture", "Intégration"))
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+#### Data GPS
+
+```{r, echo = FALSE, warning = FALSE}
+
+p1 <- plot_gps_data(data_obj = results$data_gps, data_rsf = results$data_rsf)
+p2 <- plot_gps_data_aug(results$data_gps_aug)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+# Espèces nicheuses du golfe du Lion non équipées en GPS 
+
+## Mouette mélanocéphale {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Mars
+
+```{r, echo = FALSE}
+
+rm(results, sp)
+
+load(paste0(local_path,"3.results/melanocephale/melanocephale_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+### Reproduction {.tabset}
+
+- Avril - Juillet
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/melanocephale/melanocephale_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Sterne pierregarin {.tabset}
+
+### Reproduction {.tabset}
+
+- Avril - Juillet
+- Absente en hiver     
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/pierregarin/pierregarin_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+## Océanite tempête de Méditerranée {.tabset}
+
+### Reproduction {.tabset}
+
+- Avril - Aout
+- Absent en hiver  
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/oceanite/oceanite_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+## Mouette rieuse {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Septembre - Mars
+- Trop peu de détection en mer en période de reproduction 
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/rieuse/rieuse_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+# Espèces hivernantes dans le golfe du Lion non équipées en GPS 
+
+## Mouette pygmée {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Octobre - Mai
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/pygmee/pygmee_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Mouette tridactyle {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Novembre - Avril
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/tridactyle/tridactyle_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+## Puffin des Baléares {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Aout - Décembre
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/baleares/baleares_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
+### Reproduction {.tabset}
+
+- Janvier - Juin
+- Fréquente aussi le secteur aussi en période de reproduction car reproducteur en Espagne
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/baleares/baleares_ETE_nmix_without_col.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Macareux moine {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Décembre - Mars
+
+```{r, echo = FALSE}
+
+load(paste0(local_path,"3.results/macareux/macareux_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Pingouin torda {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Décembre - Mars
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/torda/torda_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix)
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Fou de Bassan {.tabset}
+
+### Hors reproduction {.tabset}
+
+- Octobre - Avril
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/fou/fou_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+## Labbes {.tabset}
+
+- Labbe parasites, Grands labbes, Labbes pomarins + labbes indéterminés    
+
+### Hors reproduction {.tabset} 
+
+- Septembre - Mai
+
+
+```{r, echo = FALSE}
+
+rm(results, sum_out)
+
+load(paste0(local_path,"3.results/labbes/labbes_HIV_nmix.rdata"))
+sum_out <- MCMCsummary(results$out_nmix) 
+
+```
+
+#### Carte
+
+```{r, echo = FALSE, warning = FALSE}
+
+plot_spatial_prediction(results$cov_nmix, covariates, results$out_nmix)
+
+```
+
+#### Covariables environnementales
+
+```{r, echo = FALSE}
+
+make_cov_prediction_gam(results$cov_nmix, results$data_nmix$constants, results$out_nmix, gps = FALSE)
+
+```
+
+
+#### Posterior predictive check
+
+```{r, echo = FALSE}
+
+plot_PPC(results$out_nmix, results$nmix_list)
+
+```
+
+
+#### Probabilité de détection 
+
+```{r, echo = FALSE}
+
+plot_p(sum_out, results$nmix_list)
+
+```
+
+#### Data comptages
+
+```{r, echo = FALSE, fig.width = 15,fig.height = 7, warning = FALSE}
+
+p1 <-  plot_all_count(results$nmix_tibble_list)
+p2 <- plot_obs(data_list = results$nmix_tibble_list, grid_obj = covariates, data_nmix = results$data_nmix, in.log = TRUE)
+
+cowplot::plot_grid(p1, p2, ncol = 2, labels = c("Données non filtrées", "Données utilisées pour la modélisation"))
+
+```
+
+
