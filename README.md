@@ -1,4 +1,4 @@
-# Migralion :bird: :hatched_chick:
+# Migralion Work Package 6 :bird: :hatched_chick:
 
 🌊 Welcome to the MIGRALION Work Package 6 GitHub! 
 
