@@ -2,7 +2,7 @@
 
 🌊 Welcome to the MIGRALION Work Package 6 GitHub! 
 
-🪶 This repository hosts the tools and analyses developed to understand how seabirds and migratory birds use the Gulf of Lion — a crucial step toward ecologically responsible planning of floating wind farms in the Mediterranean.
+🪶 This repository hosts tools and examples of scripts developed to understand how seabirds and migratory birds use the Gulf of Lion — a crucial step toward ecologically responsible planning of floating wind farms in the Mediterranean.
 
 :mortar_board: Our work Package aimed at integrating multi-source of counts, radar and tracking data to uncover the spatiotemporal dynamics of avifauna in the Gulf of Lion.
 
