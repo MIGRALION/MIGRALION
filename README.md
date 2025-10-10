@@ -13,6 +13,6 @@ The Mediterranean Sea is a vital biodiversity hotspot and migratory corridor, bu
 ## Three sub-projects answering the following questions :memo:
 
 1.	Seabirds space use : how do seabirds use the marine environment of the Gulf of Lion?
-2.	Terrestrial birds migratory flux : which areas in the Gulf of Lion have the most intense migratory bird flows? 
-3.	Terrestrial birds flight height : at what altitude do land migrants fly when crossing the Gulf of Lion?
+2.	Terrestrial migratory birds space use : which areas in the Gulf of Lion have the most intense migratory bird flows? 
+3.	Terrestrial migratory birds flight height : at what altitude do land migrants fly when crossing the Gulf of Lion?
 
